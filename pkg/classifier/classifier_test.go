@@ -43,6 +43,30 @@ func TestClassifyComplexGetsLargeTier(t *testing.T) {
 	}
 }
 
+func TestClassifyArabicCode(t *testing.T) {
+	c := New(tokenizer.Approximate{})
+	res := c.Classify("لدي خطأ في الكود، هل يمكنك مساعدتي في تصحيح الأخطاء في هذه الدالة؟")
+
+	if res.Domain != DomainCode {
+		t.Fatalf("expected code domain, got %s", res.Domain)
+	}
+	if res.Intent != "debug" {
+		t.Fatalf("expected debug intent, got %s", res.Intent)
+	}
+}
+
+func TestClassifyArabicSimpleChatGetsLocalTier(t *testing.T) {
+	c := New(tokenizer.Approximate{})
+	res := c.Classify("مرحبا كيف حالك؟")
+
+	if res.Complexity != ComplexitySimple {
+		t.Fatalf("expected simple complexity, got %s", res.Complexity)
+	}
+	if res.RecommendedTier != TierLocal {
+		t.Fatalf("expected local tier, got %s", res.RecommendedTier)
+	}
+}
+
 func longComplexPrompt() string {
 	var b strings.Builder
 	b.WriteString("Step 1: explain this. Step 2: refactor this. ")

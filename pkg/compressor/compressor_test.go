@@ -58,6 +58,25 @@ func TestHeuristicRespectsPreserve(t *testing.T) {
 	}
 }
 
+func TestHeuristicCompressReducesTokensArabic(t *testing.T) {
+	tok := tokenizer.Approximate{}
+	h := NewHeuristic(tok)
+
+	prompt := strings.Repeat("من فضلك لاحظ أن هذه جملة حشو تتكرر بدون فائدة حقيقية. ", 8) +
+		"ما هي عاصمة فرنسا؟"
+
+	res, err := h.Compress(context.Background(), prompt, Options{TargetRatio: 0.4})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.CompressedTokens >= res.OriginalTokens {
+		t.Fatalf("expected compression to reduce tokens: original=%d compressed=%d", res.OriginalTokens, res.CompressedTokens)
+	}
+	if !strings.Contains(res.Compressed, "عاصمة فرنسا") {
+		t.Fatalf("expected the salient Arabic question to survive compression, got: %q", res.Compressed)
+	}
+}
+
 type failingCompressor struct{}
 
 func (failingCompressor) Compress(context.Context, string, Options) (Result, error) {

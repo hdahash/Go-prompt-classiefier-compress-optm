@@ -26,11 +26,14 @@ tok := tokenizer.Approximate{}
 tok.CountTokens("some prompt text")
 ```
 
-Blends a char-based (~4 chars/token) and word-based (~1.3 tokens/word)
-heuristic. It's an estimate, not a real BPE tokenizer — good enough to drive
-compression-ratio and budget decisions without vendoring a model vocabulary.
-Swap in a real tokenizer by implementing the one-method `Tokenizer`
-interface.
+Blends a char-based and word-based (~1.3 tokens/word) heuristic. The char
+estimate is script-aware: ~4 chars/token for Latin-script text, ~2.2
+chars/token for Arabic-script text (Arabic, Persian, Urdu, ...), since most
+BPE vocabularies are English-centric and fragment Arabic into more subword
+tokens per character. It's an estimate, not a real BPE tokenizer — good
+enough to drive compression-ratio and budget decisions without vendoring a
+model vocabulary. Swap in a real tokenizer by implementing the one-method
+`Tokenizer` interface.
 
 ### `pkg/classifier`
 
@@ -49,6 +52,10 @@ complexity map to a recommended tier (e.g. simple chat → `local`/Ollama-class
 model, complex code → `large`/frontier model). Pure rules, no network calls,
 safe for concurrent use.
 
+Domain and intent rules have Arabic keyword sets alongside the English ones
+(question detection also recognizes `؟`), so Arabic prompts classify without
+any extra configuration.
+
 ### `pkg/compressor`
 
 ```go
@@ -60,11 +67,16 @@ type Compressor interface {
 Two implementations, meant to be composed:
 
 - **`Heuristic`** — dependency-free, extractive. Normalizes whitespace,
-  strips filler phrasing ("kindly", "please", "just to clarify", ...),
-  drops exact-duplicate sentences, then scores remaining sentences by term
-  salience and keeps the highest-scoring ones until the target token budget
-  is hit. Fenced code blocks (` ``` `) are pulled out first and always
-  survive verbatim. `Options.Preserve` force-keeps any substring you pass.
+  strips filler phrasing ("kindly", "please", "just to clarify", ... and
+  their Arabic equivalents), drops exact-duplicate sentences, then scores
+  remaining sentences by term salience and keeps the highest-scoring ones
+  until the target token budget is hit. Fenced code blocks (` ``` `) are
+  pulled out first and always survive verbatim. `Options.Preserve`
+  force-keeps any substring you pass. Word matching uses `\p{L}\p{N}` (any
+  Unicode letter/number), sentence splitting recognizes the Arabic question
+  mark `؟`, and the stopword list covers both English and Arabic function
+  words, so salience scoring works the same for Arabic prompts as English
+  ones.
 - **`HTTPCompressor`** — a thin client for an external model-backed
   compression service (e.g. the LLMLingua-2-backed `optimizer-service` in
   `hugeai`), speaking the same `{prompt, target_token_ratio}` →
@@ -126,6 +138,12 @@ that remote compressor first (matching the request/response shape of
 - **Classification-first budgeting.** `optimizer.Optimize` only pays the
   cost of compression when the prompt is actually over budget, and the
   compression ratio is derived from the budget rather than hardcoded.
+- **Arabic as a first-class script, not a translation layer.** hugeai's
+  product targets both Arabic (RTL) and English (LTR) users, so tokenizer,
+  classifier, and compressor all handle Arabic-script text directly rather
+  than assuming Latin input. Note that Go's `regexp` `\b` word-boundary
+  assertion is ASCII-only and doesn't fire around Arabic letters, so Arabic
+  rule patterns use plain substring matching instead.
 
 ## Test
 

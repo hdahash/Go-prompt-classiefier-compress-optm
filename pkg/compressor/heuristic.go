@@ -32,6 +32,9 @@ func NewHeuristic(tok tokenizer.Tokenizer) *Heuristic {
 	return &Heuristic{Tokenizer: tok}
 }
 
+// Arabic entries below are plain substring matches rather than \b-delimited
+// ones: Go's regexp \b word-boundary assertion is ASCII-only and does not
+// fire around Arabic letters.
 var fillerPhrases = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bkindly\b\s*`),
 	regexp.MustCompile(`(?i)\bplease\b\s*`),
@@ -43,12 +46,20 @@ var fillerPhrases = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bin order to\b\s*`),
 	regexp.MustCompile(`(?i)\bfeel free to\b\s*`),
 	regexp.MustCompile(`(?i)\bit would be great if you could\b\s*`),
+	regexp.MustCompile(`من فضلك\s*`),
+	regexp.MustCompile(`لو سمحت\s*`),
+	regexp.MustCompile(`أرجو منك\s*`),
+	regexp.MustCompile(`أريد منك أن\s*`),
+	regexp.MustCompile(`بشكل أساسي\s*`),
+	regexp.MustCompile(`في الواقع\s*`),
+	regexp.MustCompile(`من أجل\s*`),
+	regexp.MustCompile(`لا تتردد في\s*`),
 }
 
 var (
 	codeBlockRe      = regexp.MustCompile("(?s)```.*?```")
-	sentenceSplitRe  = regexp.MustCompile(`[^.!?]+[.!?]+\s*|[^.!?]+$`)
-	wordRe           = regexp.MustCompile(`[A-Za-z0-9']+`)
+	sentenceSplitRe  = regexp.MustCompile(`[^.!?؟]+[.!?؟]+\s*|[^.!?؟]+$`)
+	wordRe           = regexp.MustCompile(`[\p{L}\p{N}']+`)
 	extraSpaceRe     = regexp.MustCompile(`[ \t]+`)
 	extraBlankLineRe = regexp.MustCompile(`\n{3,}`)
 )
@@ -199,7 +210,7 @@ func salience(sentence string, freq map[string]int, preserve []string) float64 {
 	if count > 0 {
 		score = sum / float64(count)
 	}
-	if strings.Contains(sentence, "?") {
+	if strings.ContainsAny(sentence, "?؟") {
 		score *= 1.15
 	}
 	for _, p := range preserve {
@@ -215,4 +226,12 @@ var stopwords = map[string]bool{
 	"to": true, "in": true, "on": true, "is": true, "are": true, "it": true,
 	"that": true, "this": true, "for": true, "with": true, "as": true,
 	"be": true, "was": true, "were": true, "i": true, "you": true, "we": true,
+	// Arabic
+	"في": true, "من": true, "إلى": true, "على": true, "عن": true,
+	"هذا": true, "هذه": true, "ذلك": true, "التي": true, "الذي": true,
+	"و": true, "أو": true, "لكن": true, "كما": true, "حتى": true,
+	"إذا": true, "أن": true, "إن": true, "كان": true, "يكون": true,
+	"لم": true, "لن": true, "قد": true, "هو": true, "هي": true,
+	"هم": true, "نحن": true, "أنت": true, "مع": true, "بين": true,
+	"عند": true, "بعد": true, "قبل": true,
 }
