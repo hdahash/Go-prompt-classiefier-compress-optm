@@ -122,8 +122,11 @@ func (c *Classifier) Classify(prompt string) Result {
 
 func classifyComplexity(prompt string, tokenCount int) Complexity {
 	codeBlocks := strings.Count(prompt, "```")
-	questions := strings.Count(prompt, "?") + strings.Count(prompt, "؟")
-	steps := strings.Count(strings.ToLower(prompt), "step") + strings.Count(prompt, "خطوة")
+	questions := countAnyRune(prompt, questionMarks)
+	steps := strings.Count(strings.ToLower(prompt), "step")
+	for _, w := range stepWords {
+		steps += strings.Count(prompt, w)
+	}
 
 	score := 0
 	switch {

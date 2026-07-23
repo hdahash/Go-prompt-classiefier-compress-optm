@@ -67,6 +67,45 @@ func TestClassifyArabicSimpleChatGetsLocalTier(t *testing.T) {
 	}
 }
 
+func TestClassifyHebrewCode(t *testing.T) {
+	c := New(tokenizer.Approximate{})
+	res := c.Classify("יש לי שגיאה בקוד, האם תוכל לעזור לי לתקן את הפונקציה הזו?")
+
+	if res.Domain != DomainCode {
+		t.Fatalf("expected code domain, got %s", res.Domain)
+	}
+	if res.Intent != "debug" {
+		t.Fatalf("expected debug intent, got %s", res.Intent)
+	}
+}
+
+func TestClassifyHebrewSimpleChatGetsLocalTier(t *testing.T) {
+	c := New(tokenizer.Approximate{})
+	res := c.Classify("שלום מה שלומך?")
+
+	if res.Complexity != ComplexitySimple {
+		t.Fatalf("expected simple complexity, got %s", res.Complexity)
+	}
+	if res.RecommendedTier != TierLocal {
+		t.Fatalf("expected local tier, got %s", res.RecommendedTier)
+	}
+}
+
+func TestClassifyUnmappedLanguageFallsBackGracefully(t *testing.T) {
+	c := New(tokenizer.Approximate{})
+	// Russian has no dedicated keyword rules; the classifier should still
+	// produce a sane structural classification instead of erroring or
+	// panicking.
+	res := c.Classify("Привет, как дела сегодня?")
+
+	if res.Domain != DomainChat && res.Domain != DomainQA {
+		t.Fatalf("expected a reasonable fallback domain, got %s", res.Domain)
+	}
+	if res.Complexity != ComplexitySimple {
+		t.Fatalf("expected simple complexity, got %s", res.Complexity)
+	}
+}
+
 func longComplexPrompt() string {
 	var b strings.Builder
 	b.WriteString("Step 1: explain this. Step 2: refactor this. ")

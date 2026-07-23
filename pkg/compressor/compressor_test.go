@@ -77,6 +77,47 @@ func TestHeuristicCompressReducesTokensArabic(t *testing.T) {
 	}
 }
 
+func TestHeuristicCompressReducesTokensHebrew(t *testing.T) {
+	tok := tokenizer.Approximate{}
+	h := NewHeuristic(tok)
+
+	prompt := strings.Repeat("בבקשה שים לב שזהו משפט מילוי חוזר ללא תועלת ממשית. ", 8) +
+		"מה היא בירת צרפת?"
+
+	res, err := h.Compress(context.Background(), prompt, Options{TargetRatio: 0.4})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.CompressedTokens >= res.OriginalTokens {
+		t.Fatalf("expected compression to reduce tokens: original=%d compressed=%d", res.OriginalTokens, res.CompressedTokens)
+	}
+	if !strings.Contains(res.Compressed, "בירת צרפת") {
+		t.Fatalf("expected the salient Hebrew question to survive compression, got: %q", res.Compressed)
+	}
+}
+
+func TestHeuristicCompressReducesTokensChinese(t *testing.T) {
+	tok := tokenizer.Approximate{}
+	h := NewHeuristic(tok)
+
+	// Chinese has no spaces between words and uses full-width punctuation
+	// (。？) rather than ASCII ".", "?" — this exercises sentenceTerminators
+	// rather than the Latin/Arabic character classes.
+	prompt := strings.Repeat("请注意这是一句重复出现且没有实际意义的填充句子。", 8) +
+		"法国的首都是哪里？"
+
+	res, err := h.Compress(context.Background(), prompt, Options{TargetRatio: 0.4})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.CompressedTokens >= res.OriginalTokens {
+		t.Fatalf("expected compression to reduce tokens: original=%d compressed=%d", res.OriginalTokens, res.CompressedTokens)
+	}
+	if !strings.Contains(res.Compressed, "法国的首都是哪里") {
+		t.Fatalf("expected the salient Chinese question to survive compression, got: %q", res.Compressed)
+	}
+}
+
 type failingCompressor struct{}
 
 func (failingCompressor) Compress(context.Context, string, Options) (Result, error) {

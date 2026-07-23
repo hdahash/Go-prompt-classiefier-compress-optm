@@ -27,12 +27,29 @@ tok.CountTokens("some prompt text")
 ```
 
 Blends a char-based and word-based (~1.3 tokens/word) heuristic. The char
-estimate is script-aware: ~4 chars/token for Latin-script text, ~2.2
-chars/token for Arabic-script text (Arabic, Persian, Urdu, ...), since most
-BPE vocabularies are English-centric and fragment Arabic into more subword
-tokens per character. It's an estimate, not a real BPE tokenizer — good
-enough to drive compression-ratio and budget decisions without vendoring a
-model vocabulary. Swap in a real tokenizer by implementing the one-method
+estimate is script-aware, since most BPE vocabularies are English-centric
+and fragment non-Latin scripts into more subword tokens per character:
+
+| Script family                    | chars/token |
+| --------------------------------- | ----------- |
+| Latin (default)                   | 4.0         |
+| Cyrillic (Russian, Ukrainian, ...) | 2.6         |
+| Arabic, Hebrew                    | 2.2         |
+| Devanagari (Hindi, Marathi, ...)  | 1.8         |
+| Thai                               | 1.7         |
+| CJK (Chinese, Japanese, Korean)   | 1.0         |
+
+CJK and Thai are conventionally written without spaces between words, so
+for text dominated by those scripts the word-based half of the estimate is
+skipped (a whitespace-derived word count is meaningless there) and the
+char-based estimate is used directly. `IsRTL(text)` is also exported: a
+simplified "first strong character" heuristic (the same rule HTML's
+`dir="auto"` uses) for right-to-left detection, useful for callers that want
+to know before doing anything else with the text.
+
+These are estimates, not a real BPE tokenizer — good enough to drive
+compression-ratio and budget decisions without vendoring a model
+vocabulary. Swap in a real tokenizer by implementing the one-method
 `Tokenizer` interface.
 
 ### `pkg/classifier`
@@ -52,9 +69,15 @@ complexity map to a recommended tier (e.g. simple chat → `local`/Ollama-class
 model, complex code → `large`/frontier model). Pure rules, no network calls,
 safe for concurrent use.
 
-Domain and intent rules have Arabic keyword sets alongside the English ones
-(question detection also recognizes `؟`), so Arabic prompts classify without
-any extra configuration.
+Domain and intent rules have Arabic and Hebrew keyword sets alongside the
+English ones. Languages without dedicated keyword rules still classify —
+they just fall back to `DomainChat` with complexity and tier decided by
+script-agnostic structural signals (length, code-block count, question
+density) rather than fine-grained domain/intent detection. Question
+detection (both for `DomainQA` and the complexity score) recognizes `?`,
+Arabic/Persian/Urdu `؟`, full-width CJK `？`, and Ethiopic `፧`. Adding a new
+language's keywords is a matter of appending to the relevant rule in
+`rules.go`; see the comment there.
 
 ### `pkg/compressor`
 
@@ -68,15 +91,19 @@ Two implementations, meant to be composed:
 
 - **`Heuristic`** — dependency-free, extractive. Normalizes whitespace,
   strips filler phrasing ("kindly", "please", "just to clarify", ... and
-  their Arabic equivalents), drops exact-duplicate sentences, then scores
-  remaining sentences by term salience and keeps the highest-scoring ones
-  until the target token budget is hit. Fenced code blocks (` ``` `) are
-  pulled out first and always survive verbatim. `Options.Preserve`
+  their Arabic/Hebrew equivalents), drops exact-duplicate sentences, then
+  scores remaining sentences by term salience and keeps the highest-scoring
+  ones until the target token budget is hit. Fenced code blocks (` ``` `)
+  are pulled out first and always survive verbatim. `Options.Preserve`
   force-keeps any substring you pass. Word matching uses `\p{L}\p{N}` (any
-  Unicode letter/number), sentence splitting recognizes the Arabic question
-  mark `؟`, and the stopword list covers both English and Arabic function
-  words, so salience scoring works the same for Arabic prompts as English
-  ones.
+  Unicode letter/number, not just `[A-Za-z0-9]`) so salience scoring works
+  for any script, not just Latin. Sentence splitting recognizes terminators
+  across scripts — `.`/`!`/`?`, Arabic/Persian/Urdu `؟`, full-width CJK
+  `。！？`, Devanagari `।॥`, Ethiopic `።` — and the stopword list covers
+  English, Arabic, and Hebrew function words. Scripts without clear
+  word/sentence separators (Thai, Lao, Khmer) aren't specially handled:
+  compression still runs and never corrupts the text, it's just less
+  granular for those scripts (fewer, larger "sentences" to choose from).
 - **`HTTPCompressor`** — a thin client for an external model-backed
   compression service (e.g. the LLMLingua-2-backed `optimizer-service` in
   `hugeai`), speaking the same `{prompt, target_token_ratio}` →
@@ -138,12 +165,19 @@ that remote compressor first (matching the request/response shape of
 - **Classification-first budgeting.** `optimizer.Optimize` only pays the
   cost of compression when the prompt is actually over budget, and the
   compression ratio is derived from the budget rather than hardcoded.
-- **Arabic as a first-class script, not a translation layer.** hugeai's
-  product targets both Arabic (RTL) and English (LTR) users, so tokenizer,
-  classifier, and compressor all handle Arabic-script text directly rather
-  than assuming Latin input. Note that Go's `regexp` `\b` word-boundary
-  assertion is ASCII-only and doesn't fire around Arabic letters, so Arabic
-  rule patterns use plain substring matching instead.
+- **Script-aware, not just Arabic-aware.** hugeai's product targets both
+  RTL (Arabic) and LTR (English) users, but the underlying mechanics —
+  script-aware token estimation, Unicode-general word matching, cross-script
+  sentence/question detection — are written to work for any script, not
+  hardcoded to Arabic vs. Latin. Domain/intent keyword *rules* are
+  necessarily per-language (English, Arabic, Hebrew today) since they're
+  actual vocabulary, but everything structural (tokenization, complexity
+  scoring, compression) degrades gracefully rather than silently breaking
+  for a language with no dedicated rules yet — verified by
+  `TestClassifyUnmappedLanguageFallsBackGracefully`. Note that Go's `regexp`
+  `\b` word-boundary assertion is ASCII-only and doesn't fire around Arabic
+  or Hebrew letters, so those rule patterns use plain substring matching
+  instead.
 
 ## Test
 

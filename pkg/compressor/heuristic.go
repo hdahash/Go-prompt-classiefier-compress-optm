@@ -32,9 +32,9 @@ func NewHeuristic(tok tokenizer.Tokenizer) *Heuristic {
 	return &Heuristic{Tokenizer: tok}
 }
 
-// Arabic entries below are plain substring matches rather than \b-delimited
-// ones: Go's regexp \b word-boundary assertion is ASCII-only and does not
-// fire around Arabic letters.
+// Arabic and Hebrew entries below are plain substring matches rather than
+// \b-delimited ones: Go's regexp \b word-boundary assertion is ASCII-only
+// and does not fire around Arabic or Hebrew letters.
 var fillerPhrases = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bkindly\b\s*`),
 	regexp.MustCompile(`(?i)\bplease\b\s*`),
@@ -54,11 +54,31 @@ var fillerPhrases = []*regexp.Regexp{
 	regexp.MustCompile(`في الواقع\s*`),
 	regexp.MustCompile(`من أجل\s*`),
 	regexp.MustCompile(`لا تتردد في\s*`),
+	regexp.MustCompile(`בבקשה\s*`),
+	regexp.MustCompile(`אנא\s*`),
+	regexp.MustCompile(`למעשה\s*`),
+	regexp.MustCompile(`בעיקרון\s*`),
 }
+
+// questionMarks are sentence-final marks that specifically indicate a
+// question, across scripts: Latin "?", Arabic/Persian/Urdu "؟", full-width
+// CJK "？", and Ethiopic "፧". Greek's question mark is a semicolon, which
+// is deliberately excluded since treating ";" as a question mark would
+// badly misfire on English prose and code.
+const questionMarks = "?؟？፧"
+
+// sentenceTerminators are all sentence-ending marks used for splitting text
+// into sentences, across scripts: questionMarks plus Latin ".", "!", CJK
+// full-width "。", Devanagari danda "।" and double danda "॥", and Ethiopic
+// full stop "።". Space-less scripts without clear terminators (Thai, Lao,
+// Khmer) aren't handled here: the compressor falls back to treating such
+// text as fewer, larger "sentences", which is safe (nothing is dropped
+// incorrectly) but less granular.
+const sentenceTerminators = ".!" + questionMarks + "。।॥։"
 
 var (
 	codeBlockRe      = regexp.MustCompile("(?s)```.*?```")
-	sentenceSplitRe  = regexp.MustCompile(`[^.!?؟]+[.!?؟]+\s*|[^.!?؟]+$`)
+	sentenceSplitRe  = regexp.MustCompile(`[^` + sentenceTerminators + `]+[` + sentenceTerminators + `]+\s*|[^` + sentenceTerminators + `]+$`)
 	wordRe           = regexp.MustCompile(`[\p{L}\p{N}']+`)
 	extraSpaceRe     = regexp.MustCompile(`[ \t]+`)
 	extraBlankLineRe = regexp.MustCompile(`\n{3,}`)
@@ -210,7 +230,7 @@ func salience(sentence string, freq map[string]int, preserve []string) float64 {
 	if count > 0 {
 		score = sum / float64(count)
 	}
-	if strings.ContainsAny(sentence, "?؟") {
+	if strings.ContainsAny(sentence, questionMarks) {
 		score *= 1.15
 	}
 	for _, p := range preserve {
@@ -234,4 +254,10 @@ var stopwords = map[string]bool{
 	"لم": true, "لن": true, "قد": true, "هو": true, "هي": true,
 	"هم": true, "نحن": true, "أنت": true, "مع": true, "بين": true,
 	"عند": true, "بعد": true, "قبل": true,
+	// Hebrew
+	"את": true, "של": true, "עם": true, "על": true, "אל": true,
+	"זה": true, "זאת": true, "הוא": true, "היא": true, "הם": true,
+	"אני": true, "אתה": true, "אנחנו": true, "גם": true, "רק": true,
+	"כי": true, "אבל": true, "או": true, "ו": true, "לא": true,
+	"יש": true, "אין": true,
 }
